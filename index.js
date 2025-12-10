@@ -301,6 +301,18 @@ async function run() {
         })
 
         // booking related apis
+        app.get('/bookings', async (req, res) => {
+            try {
+                const { email } = req.query;
+                const query = { userEmail: email };
+                const result = await bookingsCollection.find(query).toArray()
+                res.status(200).send(result)
+
+            } catch (err) {
+                res.status(500).send({ message: "Couldn't get booked tickets", err })
+            }
+        })
+
         app.post('/bookings', async (req, res) => {
             try {
                 const bookingData = req.body;
