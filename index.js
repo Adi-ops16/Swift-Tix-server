@@ -64,6 +64,7 @@ async function run() {
         const db = client.db("Swift_Tix_DB")
         const usersCollection = db.collection('users')
         const ticketsCollection = db.collection('tickets')
+        const bookingsCollection = db.collection('bookings')
 
         app.get('/', (req, res) => {
             res.send('Swift-Tix server is working')
@@ -296,6 +297,17 @@ async function run() {
 
             } catch (err) {
                 res.status(500).send({ message: "Couldn't delete ticket", err })
+            }
+        })
+
+        // booking related apis
+        app.post('/bookings', async (req, res) => {
+            try {
+                const bookingData = req.body;
+                const result = await bookingsCollection.insertOne(bookingData)
+                res.status(200).send(result)
+            } catch (err) {
+                res.status(500).send({ message: "Couldn't place booking", err })
             }
         })
 
