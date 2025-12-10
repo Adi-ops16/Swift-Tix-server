@@ -176,6 +176,31 @@ async function run() {
             }
         })
 
+        app.get('/ticket/:id', verifyFbToken, async (req, res) => {
+            try {
+                const { id } = req.params;
+                const query = { _id: new ObjectId(id) }
+                const result = await ticketsCollection.findOne(query)
+                res.status(200).send(result)
+            } catch (err) {
+                res.status(500).send({ message: "Couldn't get ticket by id", err })
+            }
+        })
+
+        app.get('/all-tickets', async (req, res) => {
+            try {
+                const status = req.query.status
+                if (!status || status !== 'accepted') {
+                    return res.status(500).json({ message: "Bad request" })
+                }
+                const query = { verification_status: status }
+                const result = await ticketsCollection.find(query).toArray()
+                res.send(result)
+            } catch (err) {
+                res.status(500).send({ message: "Couldn't get all the tickets", err })
+            }
+        })
+
         app.post('/tickets', verifyFbToken, async (req, res) => {
             try {
                 const ticketInfo = req.body;
