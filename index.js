@@ -377,6 +377,34 @@ async function run() {
             }
         })
 
+        app.patch('/bookings/status/:id', async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { bookingId, status, paymentStatus } = req.body;
+                const query = { _id: new ObjectId(id), "bookings.bookingId": new ObjectId(bookingId) }
+                if (status === 'rejected') {
+                    const updatedDoc = {
+                        $set: {
+                            "bookings.$.booking_status": status
+                        }
+                    }
+                    const result = await ticketsCollection.updateOne(query, updatedDoc)
+                    return res.status(200).send(result)
+                }
+                const updatedDoc = {
+                    $set: {
+                        "bookings.$.booking_status": status,
+                        "bookings.$.paymentStatus": paymentStatus
+                    }
+                }
+                const result = await ticketsCollection.updateOne(query, updatedDoc)
+                res.status(200).send(result)
+            } catch (err) {
+                res.status(500).send({ message: "Couldn't update booking status", err })
+            }
+
+        })
+
 
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
