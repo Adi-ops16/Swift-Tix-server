@@ -64,7 +64,6 @@ async function run() {
         const db = client.db("Swift_Tix_DB")
         const usersCollection = db.collection('users')
         const ticketsCollection = db.collection('tickets')
-        const bookingsCollection = db.collection('bookings')
 
         app.get('/', (req, res) => {
             res.send('Swift-Tix server is working')
@@ -100,7 +99,7 @@ async function run() {
         // get latest tickets 
         app.get('/latest', async (req, res) => {
             try {
-                const result = await ticketsCollection.find().sort({ _id: -1 }).limit(6).toArray()
+                const result = await ticketsCollection.find({ verification_status: 'accepted' }).sort({ _id: -1 }).limit(6).toArray()
                 res.send(result)
             } catch (err) {
                 res.send({ message: "Could't get latest tickets", err })
@@ -304,19 +303,74 @@ async function run() {
         app.get('/bookings', async (req, res) => {
             try {
                 const { email } = req.query;
-                const query = { userEmail: email };
-                const result = await bookingsCollection.find(query).toArray()
-                res.status(200).send(result)
+
+                if (!email) {
+                    return res.status(400).send({ message: "Missing email query parameter." });
+                }
+
+                const pipeline = [
+                    {
+                        $match: {
+                            "bookings.bookedBy": email
+                        }
+                    },
+
+                    {
+                        $unwind: "$bookings"
+                    },
+
+                    {
+                        $match: {
+                            "bookings.bookedBy": email
+                        }
+                    },
+
+                    {
+                        $project: {
+                            _id: "$bookings.bookingId",
+                            ticketId: "$_id",
+                            ticketName: 1,
+                            transport_type: 1,
+                            departure: 1,
+                            from: 1,
+                            to: 1,
+                            price: 1,
+                            ticketURL: 1,
+
+                            booking_status: "$bookings.booking_status",
+                            bookedBy: "$bookings.bookedBy",
+                            bookedQuantity: "$bookings.bookedQuantity",
+                            totalPrice: "$bookings.totalPrice"
+                        }
+                    }
+                ];
+
+                const result = await ticketsCollection.aggregate(pipeline).toArray();
+
+                res.status(200).send(result);
 
             } catch (err) {
-                res.status(500).send({ message: "Couldn't get booked tickets", err })
+                console.error("Booking Fetch Error:", err);
+                res.status(500).send({ message: "Couldn't get booked tickets", error: err.message });
             }
-        })
+        });
 
-        app.post('/bookings', async (req, res) => {
+        app.patch('/bookings/:id', async (req, res) => {
             try {
+                const { id } = req.params;
                 const bookingData = req.body;
-                const result = await bookingsCollection.insertOne(bookingData)
+                const query = { _id: new ObjectId(id) }
+
+                const insertBooking = {
+                    $push: {
+                        bookings: {
+                            bookingId: new ObjectId(),
+                            ...bookingData
+                        }
+                    }
+                }
+
+                const result = await ticketsCollection.updateOne(query, insertBooking)
                 res.status(200).send(result)
             } catch (err) {
                 res.status(500).send({ message: "Couldn't place booking", err })
