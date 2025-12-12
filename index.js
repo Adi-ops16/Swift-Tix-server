@@ -5,6 +5,10 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
 const port = process.env.PORT || 3000
 
+// stripe require
+const stripe = require('stripe')(`${process.env.STRIPE_SECRET}`);
+
+
 // firebase service account
 const admin = require("firebase-admin");
 
@@ -404,6 +408,38 @@ async function run() {
             }
 
         })
+
+        // payment related API
+        app.post('/create-checkout-session', async (req, res) => {
+            const { totalPrice, ticketName, ticketURL, bookedBy, bookedQuantity, ticketId, booking_id } = req.body
+            const session = await stripe.checkout.sessions.create({
+                line_items: [
+                    {
+                        price_data: {
+                            currency: 'usd',
+                            unit_amount: totalPrice * 100,
+                            product_data: {
+                                name: ticketName,
+                                images: [ticketURL],
+                                description: `Paying for ${bookedQuantity} ${bookedQuantity == 1 ? 'ticket' : 'tickets'} of ${ticketName}`
+                            },
+                        },
+                        quantity: bookedQuantity,
+                    },
+                ],
+                customer_email: bookedBy,
+                metadata: {
+                    ticketId,
+                    booking_id
+                },
+                mode: 'payment',
+                success_url: `${process.env.SITE_DOMAIN}dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.SITE_DOMAIN}dashboard/payment-cancel`,
+            })
+            console.log(session)
+            res.send({ url: session.url })
+        })
+
 
 
         await client.db("admin").command({ ping: 1 });
