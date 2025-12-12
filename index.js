@@ -68,6 +68,7 @@ async function run() {
         const db = client.db("Swift_Tix_DB")
         const usersCollection = db.collection('users')
         const ticketsCollection = db.collection('tickets')
+        const paymentsCollection = db.collection('payments')
 
         app.get('/', (req, res) => {
             res.send('Swift-Tix server is working')
@@ -411,33 +412,82 @@ async function run() {
 
         // payment related API
         app.post('/create-checkout-session', async (req, res) => {
-            const { totalPrice, ticketName, ticketURL, bookedBy, bookedQuantity, ticketId, booking_id } = req.body
-            const session = await stripe.checkout.sessions.create({
-                line_items: [
-                    {
-                        price_data: {
-                            currency: 'usd',
-                            unit_amount: totalPrice * 100,
-                            product_data: {
-                                name: ticketName,
-                                images: [ticketURL],
-                                description: `Paying for ${bookedQuantity} ${bookedQuantity == 1 ? 'ticket' : 'tickets'} of ${ticketName}`
+            try {
+                const { totalPrice, ticketName, ticketURL, bookedBy, bookedQuantity, ticketId, booking_id } = req.body
+                const session = await stripe.checkout.sessions.create({
+                    line_items: [
+                        {
+                            price_data: {
+                                currency: 'usd',
+                                unit_amount: totalPrice * 100,
+                                product_data: {
+                                    name: ticketName,
+                                    images: [ticketURL],
+                                    description: `Paying for ${bookedQuantity} ${bookedQuantity == 1 ? 'ticket' : 'tickets'} of ${ticketName}`
+                                },
                             },
+                            quantity: bookedQuantity,
                         },
-                        quantity: bookedQuantity,
+                    ],
+                    customer_email: bookedBy,
+                    metadata: {
+                        ticketId,
+                        booking_id,
+                        bookedQuantity,
+                        bookedBy,
+                        ticketName,
                     },
-                ],
-                customer_email: bookedBy,
-                metadata: {
-                    ticketId,
-                    booking_id
-                },
-                mode: 'payment',
-                success_url: `${process.env.SITE_DOMAIN}dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-                cancel_url: `${process.env.SITE_DOMAIN}dashboard/payment-cancel`,
-            })
-            console.log(session)
-            res.send({ url: session.url })
+                    mode: 'payment',
+                    success_url: `${process.env.SITE_DOMAIN}dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                    cancel_url: `${process.env.SITE_DOMAIN}dashboard/payment-cancel`,
+                })
+                res.send({ url: session.url })
+            }
+            catch (err) {
+                res.status(500).send({ message: "Couldn't create checkout session", err })
+            }
+        })
+
+        app.patch('/verify-payment', async (req, res) => {
+            try {
+                const sessionId = req.query.sessionId
+                const session = await stripe.checkout.sessions.retrieve(sessionId)
+                if (session.payment_status === 'paid') {
+
+                    const { booking_id, ticketId, bookedQuantity, ticketName, bookedBy, } = session.metadata
+                    const transaction_id = session.payment_intent
+
+                    const query = { _id: new ObjectId(ticketId), "bookings.bookingId": new ObjectId(booking_id) }
+
+                    const updatedDoc = {
+                        $set: {
+                            "bookings.$.paymentStatus": 'paid',
+                            "bookings.$.transaction_id": transaction_id,
+                            "bookings.$.payment_created": session.created
+                        },
+                        $inc: {
+                            quantity: -Number(bookedQuantity)
+                        }
+                    }
+                    // update according to the payment
+                    await ticketsCollection.updateOne(query, updatedDoc)
+
+                    // payment data to store on payments collection 
+                    const paymentData = {
+                        ticketName,
+                        ticketId,
+                        booking_id,
+                        bookedQuantity,
+                        transaction_id,
+                        bookedBy,
+                        payment_date: session.created
+                    }
+                    const result = await paymentsCollection.insertOne(paymentData)
+                    res.status(200).send(result)
+                }
+            } catch (err) {
+                res.status(500).send({ message: "Couldn't retrieve payment data", err })
+            }
         })
 
 
