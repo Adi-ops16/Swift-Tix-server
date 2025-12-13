@@ -332,8 +332,6 @@ async function run() {
 
                     {
                         $project: {
-                            _id: "$bookings.bookingId",
-                            ticketId: "$_id",
                             ticketName: 1,
                             transport_type: 1,
                             departure: 1,
@@ -341,11 +339,7 @@ async function run() {
                             to: 1,
                             price: 1,
                             ticketURL: 1,
-
-                            booking_status: "$bookings.booking_status",
-                            bookedBy: "$bookings.bookedBy",
-                            bookedQuantity: "$bookings.bookedQuantity",
-                            totalPrice: "$bookings.totalPrice"
+                            bookings: 1,
                         }
                     }
                 ];
@@ -454,8 +448,15 @@ async function run() {
                 const session = await stripe.checkout.sessions.retrieve(sessionId)
                 if (session.payment_status === 'paid') {
 
+
                     const { booking_id, ticketId, bookedQuantity, ticketName, bookedBy, } = session.metadata
                     const transaction_id = session.payment_intent
+
+                    const existingPayment = await paymentsCollection.findOne({ transaction_id: transaction_id })
+                    if (existingPayment) {
+                        return res.status(200).send({ message: "Already processed" })
+                    }
+
 
                     const query = { _id: new ObjectId(ticketId), "bookings.bookingId": new ObjectId(booking_id) }
 
