@@ -120,9 +120,68 @@ async function run() {
                     return res.status(400).send({ message: "Vendor email required" });
                 }
 
-                const result = await ticketsCollection
-                    .aggregate(pipeline(email))
-                    .toArray();
+                const pipeline = [
+                    {
+                        $match: {
+                            vendorEmail: email
+                        }
+                    },
+                    {
+                        $unwind: {
+                            path: "$bookings",
+                            preserveNullAndEmptyArrays: true
+                        }
+                    },
+                    {
+                        $facet: {
+                            paidStats: [
+                                {
+                                    $match: {
+                                        "bookings.paymentStatus": "paid"
+                                    }
+                                },
+                                {
+                                    $group: {
+                                        _id: null,
+                                        totalRevenue: { $sum: "$bookings.totalPrice" },
+                                        totalTicketsSold: { $sum: "$bookings.bookedQuantity" }
+                                    }
+                                }
+                            ],
+                            ticketStats: [
+                                {
+                                    $group: {
+                                        _id: null,
+                                        currentQuantity: { $sum: "$quantity" }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $project: {
+                            totalRevenue: {
+                                $ifNull: [{ $arrayElemAt: ["$paidStats.totalRevenue", 0] }, 0]
+                            },
+                            totalTicketsSold: {
+                                $ifNull: [{ $arrayElemAt: ["$paidStats.totalTicketsSold", 0] }, 0]
+                            },
+                            currentQuantity: {
+                                $ifNull: [{ $arrayElemAt: ["$ticketStats.currentQuantity", 0] }, 0]
+                            }
+                        }
+                    },
+                    {
+                        $addFields: {
+                            totalTicketsAdded: {
+                                $add: ["$currentQuantity", "$totalTicketsSold"]
+                            }
+                        }
+                    }
+                ];
+
+
+                const result = await ticketsCollection.aggregate(pipeline).toArray();
 
                 const stats = result[0] || {
                     totalRevenue: 0,
@@ -228,17 +287,37 @@ async function run() {
 
         app.get('/all-tickets', async (req, res) => {
             try {
-                const status = req.query.status
+                const { status, limit = 9, page = 1 } = req.query;
                 if (!status || status !== 'accepted') {
-                    return res.status(500).json({ message: "Bad request" })
+                    return res.status(400).json({ message: "Status is required and must be 'accepted'" });
                 }
-                const query = { verification_status: status }
-                const result = await ticketsCollection.find(query).toArray()
-                res.send(result)
+
+                const pageNumber = parseInt(page);
+                const pageLimit = parseInt(limit);
+                const skip = (pageNumber - 1) * pageLimit;
+
+                const query = { verification_status: status };
+
+                const [tickets, total] = await Promise.all([
+                    ticketsCollection.find(query)
+                        .skip(skip)
+                        .limit(pageLimit)
+                        .toArray(),
+                    ticketsCollection.countDocuments(query)
+                ]);
+
+                res.send({
+                    tickets,
+                    total,
+                    page: pageNumber,
+                    totalPages: Math.ceil(total / pageLimit)
+                });
+
             } catch (err) {
-                res.status(500).send({ message: "Couldn't get all the tickets", err })
+                console.error("Error fetching tickets:", err); 
+                res.status(500).send({ message: "Couldn't get all the tickets", error: err.message });
             }
-        })
+        });
 
         app.post('/tickets', verifyFbToken, async (req, res) => {
             try {
