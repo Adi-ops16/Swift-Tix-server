@@ -111,6 +111,40 @@ async function run() {
             }
         })
 
+        // vendor stats
+        app.get('/vendor/dashboard-stats', async (req, res) => {
+            try {
+                const { email } = req.query;
+
+                if (!email) {
+                    return res.status(400).send({ message: "Vendor email required" });
+                }
+
+                const result = await ticketsCollection
+                    .aggregate(pipeline(email))
+                    .toArray();
+
+                const stats = result[0] || {
+                    totalRevenue: 0,
+                    totalTicketsSold: 0,
+                    totalTicketsAdded: 0
+                };
+
+                res.send({
+                    success: true,
+                    stats
+                });
+
+            } catch (err) {
+                res.status(500).send({
+                    success: false,
+                    message: "Failed to load dashboard stats",
+                    error: err.message
+                });
+            }
+        });
+
+
         // users related api
         app.get('/users', async (req, res) => {
             try {
@@ -344,7 +378,7 @@ async function run() {
                     }
                 ];
 
-                const result = await ticketsCollection.aggregate(pipeline).toArray();
+                const result = await ticketsCollection.aggregate(pipeline).sort({ "bookings.bookingId": -1 }).toArray();
 
                 res.status(200).send(result);
 
@@ -405,15 +439,28 @@ async function run() {
         })
 
         // payment related API
+        app.get('/payment-history', async (req, res) => {
+            try {
+                const { email } = req.query;
+                const query = { bookedBy: email }
+
+                const result = await paymentsCollection.find(query).toArray()
+                res.send(result)
+
+            } catch (err) {
+                res.status(500).send({ message: "Couldn't get transaction history", err })
+            }
+        })
+
         app.post('/create-checkout-session', async (req, res) => {
             try {
-                const { totalPrice, ticketName, ticketURL, bookedBy, bookedQuantity, ticketId, booking_id } = req.body
+                const { basePrice, ticketName, ticketURL, bookedBy, bookedQuantity, ticketId, bookingId } = req.body
                 const session = await stripe.checkout.sessions.create({
                     line_items: [
                         {
                             price_data: {
                                 currency: 'usd',
-                                unit_amount: totalPrice * 100,
+                                unit_amount: basePrice * 100,
                                 product_data: {
                                     name: ticketName,
                                     images: [ticketURL],
@@ -426,7 +473,7 @@ async function run() {
                     customer_email: bookedBy,
                     metadata: {
                         ticketId,
-                        booking_id,
+                        bookingId,
                         bookedQuantity,
                         bookedBy,
                         ticketName,
@@ -448,17 +495,28 @@ async function run() {
                 const session = await stripe.checkout.sessions.retrieve(sessionId)
                 if (session.payment_status === 'paid') {
 
-
-                    const { booking_id, ticketId, bookedQuantity, ticketName, bookedBy, } = session.metadata
+                    const { bookingId, ticketId, bookedQuantity, ticketName, bookedBy, } = session.metadata
                     const transaction_id = session.payment_intent
+
+                    // payment data to store on payments collection 
+                    const paymentData = {
+                        ticketName,
+                        ticketId,
+                        bookingId,
+                        bookedQuantity,
+                        transaction_id,
+                        bookedBy,
+                        totalPrice: session.amount_total,
+                        payment_date: session.created
+                    }
 
                     const existingPayment = await paymentsCollection.findOne({ transaction_id: transaction_id })
                     if (existingPayment) {
-                        return res.status(200).send({ message: "Already processed" })
+                        return res.status(200).send({ message: "Already processed", paymentData })
                     }
 
 
-                    const query = { _id: new ObjectId(ticketId), "bookings.bookingId": new ObjectId(booking_id) }
+                    const query = { _id: new ObjectId(ticketId), "bookings.bookingId": new ObjectId(bookingId) }
 
                     const updatedDoc = {
                         $set: {
@@ -473,25 +531,14 @@ async function run() {
                     // update according to the payment
                     await ticketsCollection.updateOne(query, updatedDoc)
 
-                    // payment data to store on payments collection 
-                    const paymentData = {
-                        ticketName,
-                        ticketId,
-                        booking_id,
-                        bookedQuantity,
-                        transaction_id,
-                        bookedBy,
-                        payment_date: session.created
-                    }
+
                     const result = await paymentsCollection.insertOne(paymentData)
-                    res.status(200).send(result)
+                    res.status(200).send({ result, paymentData })
                 }
             } catch (err) {
                 res.status(500).send({ message: "Couldn't retrieve payment data", err })
             }
         })
-
-
 
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
