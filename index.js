@@ -63,8 +63,6 @@ const client = new MongoClient(uri, {
 
 async function run() {
     try {
-        await client.connect();
-
         const db = client.db("Swift_Tix_DB")
         const usersCollection = db.collection('users')
         const ticketsCollection = db.collection('tickets')
@@ -75,7 +73,7 @@ async function run() {
         })
 
         // get role
-        app.get('/role', async (req, res) => {
+        app.get('/role', verifyFbToken, async (req, res) => {
             try {
                 const email = req.query.email
                 const query = { email: email }
@@ -112,7 +110,7 @@ async function run() {
         })
 
         // vendor stats
-        app.get('/vendor/dashboard-stats', async (req, res) => {
+        app.get('/vendor/dashboard-stats', verifyFbToken, async (req, res) => {
             try {
                 const { email } = req.query;
 
@@ -236,7 +234,7 @@ async function run() {
             }
         })
 
-        app.patch('/update/role', async (req, res) => {
+        app.patch('/update/role', verifyFbToken, async (req, res) => {
             try {
                 const id = req.body.id
                 const role = req.body.updatedRole
@@ -255,7 +253,7 @@ async function run() {
 
         // ticket related apis
 
-        app.get('/tickets', async (req, res) => {
+        app.get('/tickets', verifyFbToken, async (req, res) => {
             try {
                 const { status } = req.query
                 const { email } = req.query
@@ -314,7 +312,7 @@ async function run() {
                 });
 
             } catch (err) {
-                console.error("Error fetching tickets:", err); 
+                console.error("Error fetching tickets:", err);
                 res.status(500).send({ message: "Couldn't get all the tickets", error: err.message });
             }
         });
@@ -333,7 +331,7 @@ async function run() {
             }
         })
 
-        app.patch('/tickets/status', async (req, res) => {
+        app.patch('/tickets/status', verifyFbToken, async (req, res) => {
             try {
                 const { id } = req.body;
                 const { status } = req.body;
@@ -352,7 +350,7 @@ async function run() {
             }
         })
 
-        app.patch('/tickets/advertise/:id', async (req, res) => {
+        app.patch('/tickets/advertise/:id', verifyFbToken, async (req, res) => {
             try {
                 const { id } = req.params
                 const { advertise } = req.body
@@ -418,7 +416,7 @@ async function run() {
         })
 
         // booking related apis
-        app.get('/bookings', async (req, res) => {
+        app.get('/bookings', verifyFbToken, async (req, res) => {
             try {
                 const { email } = req.query;
 
@@ -467,7 +465,7 @@ async function run() {
             }
         });
 
-        app.patch('/bookings/:id', async (req, res) => {
+        app.patch('/bookings/:id', verifyFbToken, async (req, res) => {
             try {
                 const { id } = req.params;
                 const bookingData = req.body;
@@ -489,7 +487,7 @@ async function run() {
             }
         })
 
-        app.patch('/bookings/status/:id', async (req, res) => {
+        app.patch('/bookings/status/:id', verifyFbToken, async (req, res) => {
             try {
                 const { id } = req.params;
                 const { bookingId, status, paymentStatus } = req.body;
@@ -518,7 +516,7 @@ async function run() {
         })
 
         // payment related API
-        app.get('/payment-history', async (req, res) => {
+        app.get('/payment-history', verifyFbToken, async (req, res) => {
             try {
                 const { email } = req.query;
                 const query = { bookedBy: email }
@@ -531,7 +529,7 @@ async function run() {
             }
         })
 
-        app.post('/create-checkout-session', async (req, res) => {
+        app.post('/create-checkout-session', verifyFbToken, async (req, res) => {
             try {
                 const { basePrice, ticketName, ticketURL, bookedBy, bookedQuantity, ticketId, bookingId } = req.body
                 const session = await stripe.checkout.sessions.create({
@@ -568,7 +566,7 @@ async function run() {
             }
         })
 
-        app.patch('/verify-payment', async (req, res) => {
+        app.patch('/verify-payment', verifyFbToken, async (req, res) => {
             try {
                 const sessionId = req.query.sessionId
                 const session = await stripe.checkout.sessions.retrieve(sessionId)
@@ -618,9 +616,6 @@ async function run() {
                 res.status(500).send({ message: "Couldn't retrieve payment data", err })
             }
         })
-
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
     } finally {
     }
