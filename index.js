@@ -251,6 +251,36 @@ async function run() {
             }
         })
 
+        app.patch('/fraud', verifyFbToken, async (req, res) => {
+
+            const email = req.query.email;
+
+            const query = { email: email }
+            const updateFraud = {
+                $set: {
+                    isFraud: true
+                }
+            }
+
+            await usersCollection.updateOne(query, updateFraud)
+
+            const ticketQuery = { vendorEmail: email }
+
+            const result = await ticketsCollection.deleteMany(ticketQuery)
+
+            return res.send(result)
+        })
+
+        app.get('/fraud', verifyFbToken, async (req, res) => {
+            const { email } = req.query
+            const result = await usersCollection.findOne({ email: email }, {
+                projection: {
+                    isFraud: 1
+                }
+            })
+            res.send(result)
+        })
+
         // ticket related apis
 
         app.get('/tickets', verifyFbToken, async (req, res) => {
@@ -283,7 +313,7 @@ async function run() {
             }
         })
 
-        app.get('/all-tickets', async (req, res) => {
+        app.get('/all-tickets', verifyFbToken, async (req, res) => {
             try {
                 const { status, limit = 9, page = 1 } = req.query;
                 if (!status || status !== 'accepted') {
