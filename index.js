@@ -234,6 +234,24 @@ async function run() {
             }
         })
 
+        app.patch('/users', verifyFbToken, async (req, res) => {
+            try {
+                const { email } = req.query;
+                const { displayName, photoURL } = req.body;
+                const query = { email }
+                const result = await usersCollection.updateOne(query, {
+                    $set: {
+                        photoURL,
+                        displayName
+                    }
+                })
+
+                res.send({ update: "success", message: "User profile updated in database", result })
+            } catch (err) {
+                res.send("error while updating user profile", err)
+            }
+        })
+
         app.patch('/update/role', verifyFbToken, async (req, res) => {
             try {
                 const id = req.body.id
