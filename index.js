@@ -331,7 +331,7 @@ async function run() {
             }
         })
 
-        app.get('/all-tickets', async (req, res) => {
+        app.get('/all-tickets', verifyFbToken, async (req, res) => {
             try {
                 const { status, page = 1, transport, from, to, sort } = req.query;
                 const pageLimit = 9
