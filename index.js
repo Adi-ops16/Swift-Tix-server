@@ -331,21 +331,29 @@ async function run() {
             }
         })
 
-        app.get('/all-tickets', verifyFbToken, async (req, res) => {
+        app.get('/all-tickets', async (req, res) => {
             try {
-                const { status, limit = 9, page = 1 } = req.query;
+                const { status, page = 1, transport, from, to, sort } = req.query;
+                const pageLimit = 9
+
                 if (!status || status !== 'accepted') {
                     return res.status(400).json({ message: "Status is required and must be 'accepted'" });
                 }
 
+                const query = { verification_status: status };
+
+                if (transport) { query.transport_type = transport }
+                if (from) { query.from = { $regex: from, $options: 'i' } }
+                if (to) { query.to = { $regex: to, $options: 'i' } }
+
                 const pageNumber = parseInt(page);
-                const pageLimit = parseInt(limit);
+                const price = sort === 'desc' ? -1 : 1;
                 const skip = (pageNumber - 1) * pageLimit;
 
-                const query = { verification_status: status };
 
                 const [tickets, total] = await Promise.all([
                     ticketsCollection.find(query)
+                        .sort({ price: price })
                         .skip(skip)
                         .limit(pageLimit)
                         .toArray(),
